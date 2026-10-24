@@ -1,0 +1,8 @@
+  {
+    "version": 0,
+    "tools": {
+      "index": {
+        "label": "ZFS Pools"
+      }
+    }
+  }

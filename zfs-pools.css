@@ -1,0 +1,51 @@
+:root {
+    --bg: #ffffff;
+    --text: #151515;
+    --card: #f0f0f0;
+    --track: #d2d2d2;
+    --accent: #0066cc;
+    --ok: #3e8635;
+    --warn: #f0ab00;
+    --bad: #c9190b;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #1b1d21;
+        --text: #e0e0e0;
+        --card: #26292d;
+        --track: #3c3f42;
+        --accent: #73bcf7;
+    }
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Red Hat Text", "Overpass", sans-serif;
+    margin: 1.5rem;
+}
+
+#pools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.pool-card {
+    background: var(--card);
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    width: 220px;
+    text-align: center;
+}
+
+.donut { width: 150px; height: 150px; }
+.donut-track { fill: none; stroke: var(--track); stroke-width: 12; }
+.donut-fill  { fill: none; stroke: var(--accent); stroke-width: 12; stroke-linecap: round; }
+.donut-label { fill: var(--text); font-size: 14px; }
+
+.health { font-weight: bold; }
+.health.ok   { color: var(--ok); }
+.health.warn { color: var(--warn); }
+.health.bad  { color: var(--bad); }
