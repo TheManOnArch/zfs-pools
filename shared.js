@@ -15,9 +15,13 @@ function runAdmin(command) {
     return cockpit.spawn(command, { superuser: "require", err: "message" });
 }
 
-// Shows a status line at the top of the page (green for success, red for errors)
+// Shows a status line (green for success, red for errors).
+// If a dialog with its own message line is open, the message goes there instead.
 function showMessage(text, isError) {
-    const box = document.getElementById("message");
+    const dialog = document.querySelector("dialog[open]");
+    const dialogBox = dialog ? dialog.querySelector(".message") : null;
+    const box = dialogBox || document.getElementById("message");
+
     box.textContent = text;
     box.className = isError ? "message error" : "message ok";
 }
