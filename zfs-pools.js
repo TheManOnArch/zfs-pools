@@ -73,7 +73,23 @@ function makePoolCard(name, percent, health, size, alloc, disks, scan) {
     scrub.className = "scrub";
     scrub.textContent = scrubText(scan);
     card.appendChild(scrub);
-
+    const scrubRunning = scan && scan.function === "SCRUB" && scan.state === "SCANNING";
+    const scrubBtn = document.createElement("button");
+    scrubBtn.textContent = scrubRunning ? "Scrub running..." : "Start scrub";
+    scrubBtn.disabled = scrubRunning;
+    scrubBtn.addEventListener("click", () => {
+        scrubBtn.disabled = true;
+        runAdmin(["zpool", "scrub", name])
+            .then(() => {
+                showMessage("Scrub started on " + name + ".");
+                loadPools();
+            })
+            .catch((error) => {
+                showMessage("Could not start scrub: " + error.message, true);
+                scrubBtn.disabled = false;
+            });
+    });
+    card.appendChild(scrubBtn);
     card.appendChild(makeDiskTable(disks));
 
     return card;

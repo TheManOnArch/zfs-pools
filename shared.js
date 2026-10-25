@@ -10,3 +10,14 @@ function formatBytes(bytes) {
     }
     return bytes.toFixed(1) + " " + units[i];
 }
+// Runs a command as root (needs "Administrative access" turned on in Cockpit)
+function runAdmin(command) {
+    return cockpit.spawn(command, { superuser: "require", err: "message" });
+}
+
+// Shows a status line at the top of the page (green for success, red for errors)
+function showMessage(text, isError) {
+    const box = document.getElementById("message");
+    box.textContent = text;
+    box.className = isError ? "message error" : "message ok";
+}
