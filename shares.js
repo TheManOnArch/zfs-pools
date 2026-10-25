@@ -1,3 +1,8 @@
+const SHARES_CONF = "/etc/samba/shares.conf";
+const SHARES_HEADER =
+    "# Managed by the zfs-pools Cockpit plugin.\n" +
+    "# Changes made here by hand may be overwritten.\n";
+
 // Built-in sections that aren't real shares for our purposes
 const HIDDEN_SECTIONS = ["global", "homes", "printers", "print$"];
 
@@ -7,9 +12,10 @@ function loadShares() {
     const configCmd = cockpit.spawn(["testparm", "-s"]);
     // smbstatus needs root. If admin access is off, carry on without connection info
     const statusCmd = runAdmin(["smbstatus", "--json"]).catch(() => null);
+    const managedCmd = readManagedShares().catch(() => ({}));
 
-    Promise.all([configCmd, statusCmd])
-        .then(([configText, statusText]) => {
+    Promise.all([configCmd, statusCmd, managedCmd])
+        .then(([configText, statusText, managed]) => {
             const sections = parseSmbConfig(configText);
             const status = statusText ? JSON.parse(statusText) : null;
 
@@ -24,7 +30,7 @@ function loadShares() {
             }
 
             for (const name of names) {
-                container.appendChild(makeShareSection(name, sections[name], status));
+                container.appendChild(makeShareSection(name, sections[name], status, name in managed));
             }
 
             if (!status) {
@@ -35,8 +41,8 @@ function loadShares() {
             container.textContent = "Error loading shares: " + error.message;
         });
 }
-
 document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("new-share").addEventListener("click", openNewShareDialog);
     loadShares();
     setInterval(loadShares, 30000);
 });
@@ -76,13 +82,25 @@ function isWritable(settings) {
     return ro === "no" || w === "yes";
 }
 
-function makeShareSection(name, settings, status) {
+function makeShareSection(name, settings, status, isManaged) {
     const section = document.createElement("div");
-    section.className = "snap-section";
+    section.className = "card";
 
     const title = document.createElement("h2");
     title.textContent = name;
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = isManaged ? "managed here" : "from smb.conf (edit by hand)";
+    title.appendChild(tag);
     section.appendChild(title);
+
+    if (isManaged) {
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = "Remove share";
+        removeBtn.className = "danger";
+        removeBtn.addEventListener("click", () => deleteShare(name));
+        section.appendChild(removeBtn);
+}
 
     const details = document.createElement("table");
     details.className = "data-table";
@@ -105,7 +123,6 @@ function makeShareSection(name, settings, status) {
     section.appendChild(makeConnectionsTable(name, status));
     return section;
 }
-
 // Who has this share open right now
 function makeConnectionsTable(shareName, status) {
     const wrap = document.createElement("div");
@@ -170,4 +187,184 @@ function makeConnectionsTable(shareName, status) {
     }
     wrap.appendChild(table);
     return wrap;
+}
+// ---------- Managed shares (shares.conf) ----------
+
+// Reads /etc/samba/shares.conf into { name: { key: value } }. A missing file counts as empty.
+async function readManagedShares() {
+    const file = cockpit.file(SHARES_CONF);
+    try {
+        const text = await file.read();
+        return parseSmbConfig(text || "");
+    } finally {
+        file.close();
+    }
+}
+
+// Turns { name: { key: value } } back into config-file text
+function serializeShares(sections) {
+    let out = SHARES_HEADER;
+    for (const name of Object.keys(sections).sort()) {
+        out += "\n[" + name + "]\n";
+        for (const [key, value] of Object.entries(sections[name])) {
+            out += "    " + key + " = " + value + "\n";
+        }
+    }
+    return out;
+}
+
+// Write -> check with testparm -> undo if Samba rejects it -> reload Samba
+async function saveManagedShares(sections) {
+    const file = cockpit.file(SHARES_CONF, { superuser: "require" });
+    try {
+        const oldText = await file.read();
+        await file.replace(serializeShares(sections));
+
+        try {
+            await cockpit.spawn(["testparm", "-s"], { err: "message" });
+        } catch (error) {
+            await file.replace(oldText || SHARES_HEADER);
+            throw new Error("Samba rejected the new configuration, so the change was undone. " + error.message);
+        }
+    } finally {
+        file.close();
+    }
+    await runAdmin(["smbcontrol", "smbd", "reload-config"]);
+}
+
+async function openNewShareDialog() {
+    let datasets;
+    try {
+        const text = await cockpit.spawn(["zfs", "list", "-H", "-o", "name,mountpoint", "-t", "filesystem"]);
+        datasets = text.trim().split("\n")
+            .map((line) => line.split("\t"))
+            .filter(([name, mountpoint]) => mountpoint && mountpoint.startsWith("/"))
+            .map(([name, mountpoint]) => ({ name: name, mountpoint: mountpoint }));
+    } catch (error) {
+        showMessage("Could not list datasets: " + error.message, true);
+        return;
+    }
+
+    const dialog = document.createElement("dialog");
+    dialog.className = "confirm";
+    // Fixed markup only: no data from the system is inserted here, so innerHTML is safe
+    dialog.innerHTML = `
+        <h2>New share</h2>
+        <label class="field">Share name
+            <input name="name" placeholder="e.g. Photos" maxlength="32">
+        </label>
+        <label class="field">Folder (ZFS dataset)
+            <select name="path"></select>
+        </label>
+        <label class="field">Allowed users (separate with spaces)
+            <input name="users" value="ben">
+        </label>
+        <label class="check"><input type="checkbox" name="writable" checked> Allow writing</label>
+        <p class="message"></p>
+        <div class="confirm-buttons">
+            <button class="secondary" data-action="cancel">Cancel</button>
+            <button data-action="create">Create share</button>
+        </div>`;
+
+    const select = dialog.querySelector("select[name=path]");
+    for (const d of datasets) {
+        const option = document.createElement("option");
+        option.value = d.mountpoint;
+        option.textContent = d.name + "  (" + d.mountpoint + ")";
+        select.appendChild(option);
+    }
+
+    dialog.querySelector("[data-action=cancel]").addEventListener("click", () => dialog.close());
+    dialog.querySelector("[data-action=create]").addEventListener("click", () => createShareFromForm(dialog));
+    dialog.addEventListener("close", () => dialog.remove());
+
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    dialog.querySelector("input[name=name]").focus();
+}
+
+async function createShareFromForm(dialog) {
+    const name = dialog.querySelector("[name=name]").value.trim();
+    const path = dialog.querySelector("[name=path]").value;
+    const users = dialog.querySelector("[name=users]").value.split(/[\s,]+/).filter((u) => u !== "");
+    const writable = dialog.querySelector("[name=writable]").checked;
+    const createBtn = dialog.querySelector("[data-action=create]");
+
+    // --- Validate everything before touching the system ---
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(name)) {
+        showMessage("Share name: up to 32 letters, numbers, - or _, starting with a letter or number.", true);
+        return;
+    }
+    if (HIDDEN_SECTIONS.includes(name.toLowerCase())) {
+        showMessage("'" + name + "' is a name reserved by Samba.", true);
+        return;
+    }
+    if (!path.startsWith("/")) {
+        showMessage("Choose a folder.", true);
+        return;
+    }
+    if (users.length === 0) {
+        showMessage("Add at least one allowed user.", true);
+        return;
+    }
+    for (const user of users) {
+        if (!/^[a-z_][a-z0-9_-]*$/.test(user)) {
+            showMessage("'" + user + "' is not a valid user name.", true);
+            return;
+        }
+    }
+
+    createBtn.disabled = true;
+    try {
+        // Share names must be unique across ALL of Samba's config, not just our file
+        const existing = parseSmbConfig(await cockpit.spawn(["testparm", "-s"]));
+        if (Object.keys(existing).some((n) => n.toLowerCase() === name.toLowerCase())) {
+            throw new Error("A share called '" + name + "' already exists.");
+        }
+
+        // Each user needs a Samba password, or they could never log in
+        for (const user of users) {
+            try {
+                await runAdmin(["pdbedit", "-L", "-u", user]);
+            } catch (error) {
+                throw new Error("'" + user + "' has no Samba account. Run: sudo smbpasswd -a " + user);
+            }
+        }
+
+        const managed = await readManagedShares();
+        managed[name] = {
+            "path": path,
+            "read only": writable ? "no" : "yes",
+            "valid users": users.join(" "),
+        };
+        await saveManagedShares(managed);
+
+        dialog.close();
+        showMessage("Created share " + name + ".");
+        loadShares();
+    } catch (error) {
+        showMessage(error.message, true);
+        createBtn.disabled = false;
+    }
+}
+
+async function deleteShare(name) {
+    const ok = await confirmDialog(
+        "Remove the share\n\n" + name +
+        "\n\nThe files in the folder are NOT deleted. Only network access to them is removed.",
+        "Remove share", true
+    );
+    if (!ok) {
+        return;
+    }
+
+    try {
+        const managed = await readManagedShares();
+        delete managed[name];
+        await saveManagedShares(managed);
+        showMessage("Removed share " + name + ".");
+        loadShares();
+    } catch (error) {
+        showMessage("Could not remove share: " + error.message, true);
+    }
 }

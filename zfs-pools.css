@@ -155,3 +155,21 @@ button.danger-solid { background: var(--bad); color: #fff; }
 /* Same column widths in every snapshot table */
 .card .data-table { table-layout: fixed; }
 .card .data-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+dialog.confirm h2 { margin-top: 0; font-size: 1.1rem; }
+
+.field { display: block; margin-bottom: 0.75rem; font-size: 0.9rem; }
+.field input, .field select {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 0.25rem;
+    padding: 0.4rem 0.5rem;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--track);
+    border-radius: 4px;
+    font: inherit;
+}
+.check { display: block; margin-bottom: 0.75rem; font-size: 0.9rem; }
+
+.tag { font-size: 0.75rem; font-weight: normal; opacity: 0.6; margin-left: 0.6rem; }
