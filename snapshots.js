@@ -137,28 +137,29 @@ function takeSnapshot(dataset, button) {
 }
 
 // Deletes ONE snapshot, after asking first
-function deleteSnapshot(fullName, button) {
-    // Safety guard: without an "@", zfs destroy would delete a whole dataset
+async function deleteSnapshot(fullName, button) {
     if (!fullName.includes("@")) {
         showMessage("Refusing to delete '" + fullName + "': not a snapshot.", true);
         return;
     }
 
-    const ok = window.confirm("Delete snapshot\n\n" + fullName + "\n\nThis cannot be undone.");
+    const ok = await confirmDialog(
+        "Delete snapshot\n\n" + fullName + "\n\nThis cannot be undone.",
+        "Delete", true
+    );
     if (!ok) {
         return;
     }
 
     button.disabled = true;
-    runAdmin(["zfs", "destroy", fullName])
-        .then(() => {
-            showMessage("Deleted " + fullName + ".");
-            loadSnapshots();
-        })
-        .catch((error) => {
-            showMessage("Could not delete: " + error.message, true);
-            button.disabled = false;
-        });
+    try {
+        await runAdmin(["zfs", "destroy", fullName]);
+        showMessage("Deleted " + fullName + ".");
+        loadSnapshots();
+    } catch (error) {
+        showMessage("Could not delete: " + error.message, true);
+        button.disabled = false;
+    }
 }
 
 // 2026-10-24 18:30:05 -> "2026-10-24_18-30-05" (local time)
@@ -306,8 +307,8 @@ function renderBrowser(relPath, items) {
 }
 
 // Copies one file or folder from the snapshot back to the same place in the live dataset
-function restoreItem(relPath, isDir, button) {
-    // Safety guard: never let a path climb out of the snapshot with ".."
+// Copies one file or folder from the snapshot back to the same place in the live dataset
+async function restoreItem(relPath, isDir, button) {
     if (relPath.split("/").includes("..")) {
         showMessage("Refusing to restore a path containing '..'.", true);
         return;
@@ -315,31 +316,37 @@ function restoreItem(relPath, isDir, button) {
 
     const source = browserState.snapRoot + "/" + relPath;
     const target = browserState.liveRoot + "/" + relPath;
+    const snapName = browserState.snapName;
 
-    // Does the item still exist in the live dataset? (test -e succeeds if it does)
-    runAdmin(["test", "-e", target])
-        .then(() => true)
-        .catch(() => false)
-        .then((exists) => {
-            const question = exists
-                ? "Restore and OVERWRITE the current version of\n\n" + target +
-                  "\n\nwith the copy from " + browserState.snapName + "?\n\nAny changes made since then will be lost."
-                : "Restore\n\n" + target + "\n\nfrom " + browserState.snapName + "?";
-            if (!window.confirm(question)) {
-                return;
-            }
+    let exists = true;
+    try {
+        await runAdmin(["test", "-e", target]);
+    } catch (error) {
+        exists = false;
+    }
 
-            button.disabled = true;
-            // For folders, copy the CONTENTS ("source/.") so it never nests inside an existing folder
-            const command = isDir
-                ? ["cp", "-a", "--", source + "/.", target]
-                : ["cp", "-a", "--", source, target];
+    const ok = exists
+        ? await confirmDialog(
+            "Restore and OVERWRITE the current version of\n\n" + target +
+            "\n\nwith the copy from " + snapName + "?\n\nAny changes made since then will be lost.",
+            "Overwrite", true)
+        : await confirmDialog(
+            "Restore\n\n" + target + "\n\nfrom " + snapName + "?",
+            "Restore", false);
+    if (!ok) {
+        return;
+    }
 
-            return runAdmin(command)
-                .then(() => showMessage("Restored " + target + "."))
-                .catch((error) => {
-                    showMessage("Restore failed: " + error.message, true);
-                    button.disabled = false;
-                });
-        });
+    button.disabled = true;
+    const command = isDir
+        ? ["cp", "-a", "--", source + "/.", target]
+        : ["cp", "-a", "--", source, target];
+
+    try {
+        await runAdmin(command);
+        showMessage("Restored " + target + ".");
+    } catch (error) {
+        showMessage("Restore failed: " + error.message, true);
+        button.disabled = false;
+    }
 }

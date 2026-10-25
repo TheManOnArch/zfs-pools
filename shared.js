@@ -15,13 +15,63 @@ function runAdmin(command) {
     return cockpit.spawn(command, { superuser: "require", err: "message" });
 }
 
-// Shows a status line (green for success, red for errors).
-// If a dialog with its own message line is open, the message goes there instead.
+let messageTimer = null;
+
+// Shows a status line. Success messages fade after 5 seconds; errors stay until replaced.
 function showMessage(text, isError) {
     const dialog = document.querySelector("dialog[open]");
     const dialogBox = dialog ? dialog.querySelector(".message") : null;
     const box = dialogBox || document.getElementById("message");
 
+    clearTimeout(messageTimer);
     box.textContent = text;
     box.className = isError ? "message error" : "message ok";
+
+    if (!isError) {
+        messageTimer = setTimeout(() => box.classList.add("fade"), 5000);
+    }
+}
+// A styled yes/no pop-up. Returns a Promise that resolves to true (confirmed) or false.
+function confirmDialog(message, confirmText, danger) {
+    return new Promise((resolve) => {
+        const dialog = document.createElement("dialog");
+        dialog.className = "confirm";
+
+        const text = document.createElement("p");
+        text.textContent = message;
+        dialog.appendChild(text);
+
+        const buttons = document.createElement("div");
+        buttons.className = "confirm-buttons";
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.className = "secondary";
+
+        const okBtn = document.createElement("button");
+        okBtn.textContent = confirmText || "OK";
+        if (danger) {
+            okBtn.className = "danger-solid";
+        }
+
+        buttons.appendChild(cancelBtn);
+        buttons.appendChild(okBtn);
+        dialog.appendChild(buttons);
+
+        // Whatever closes the dialog (a button, or Esc) ends up here exactly once
+        let answer = false;
+        cancelBtn.addEventListener("click", () => dialog.close());
+        okBtn.addEventListener("click", () => {
+            answer = true;
+            dialog.close();
+        });
+        dialog.addEventListener("close", () => {
+            dialog.remove();
+            resolve(answer);
+        });
+
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        cancelBtn.focus();   // the safe choice has focus, so pressing Enter cancels
+    });
 }
