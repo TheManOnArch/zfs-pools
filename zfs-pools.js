@@ -165,14 +165,3 @@ function healthClass(health) {
     if (health === "DEGRADED") return "warn";
     return "bad";
 }
-
-// 2093056 -> "2.0 MB"
-function formatBytes(bytes) {
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    let i = 0;
-    while (bytes >= 1024 && i < units.length - 1) {
-        bytes /= 1024;
-        i++;
-    }
-    return bytes.toFixed(1) + " " + units[i];
-}

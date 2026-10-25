@@ -1,8 +1,11 @@
-  {
+{
     "version": 0,
     "tools": {
-      "index": {
-        "label": "ZFS Pools"
-      }
+        "index": {
+            "label": "ZFS Pools"
+        },
+        "snapshots": {
+            "label": "ZFS Snapshots"
+        }
     }
-  }
+}
