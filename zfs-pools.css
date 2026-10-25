@@ -49,3 +49,22 @@ body {
 .health.ok   { color: var(--ok); }
 .health.warn { color: var(--warn); }
 .health.bad  { color: var(--bad); }
+
+.pool-card { width: 380px; }
+
+.scrub { font-size: 0.85rem; opacity: 0.75; }
+
+.disks {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    margin-top: 0.75rem;
+}
+.disks th, .disks td {
+    padding: 0.3rem 0.4rem;
+    border-top: 1px solid var(--track);
+    text-align: left;
+}
+.disks th { opacity: 0.7; font-weight: normal; }
+.disks .num { text-align: right; font-variant-numeric: tabular-nums; }
+.disks .bad-count { color: var(--bad); font-weight: bold; }

@@ -1,17 +1,30 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+// Fetches pool data and rebuilds the cards
 function loadPools() {
     const container = document.getElementById("pools");
 
-    cockpit.spawn(["zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,health"])
-        .then((data) => {
+    const listCmd = cockpit.spawn(["zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,health"]);
+    const statusCmd = cockpit.spawn(["zpool", "status", "-j"]);
+
+    Promise.all([listCmd, statusCmd])
+        .then(([listText, statusText]) => {
+            const status = JSON.parse(statusText);
             container.textContent = "";
-            const lines = data.trim().split("\n");
+
+            const lines = listText.trim().split("\n");
             for (const line of lines) {
                 const [name, size, alloc, free, health] = line.split("\t");
                 const percent = (Number(alloc) / Number(size)) * 100;
+
+                const pool = status.pools[name];
+                const disks = [];
+                for (const vdev of Object.values(pool.vdevs)) {
+                    collectDisks(vdev, disks);
+                }
+
                 container.appendChild(
-                    makePoolCard(name, percent, health, Number(size), Number(alloc))
+                    makePoolCard(name, percent, health, Number(size), Number(alloc), disks, pool.scan_stats)
                 );
             }
         })
@@ -19,13 +32,25 @@ function loadPools() {
             container.textContent = "Error loading pools: " + error.message;
         });
 }
+
 document.addEventListener("DOMContentLoaded", () => {
     loadPools();
     setInterval(loadPools, 30000);
 });
 
-// Builds one card: name, donut, health, usage text
-function makePoolCard(name, percent, health, size, alloc) {
+// Walks down the vdev tree and collects every disk into one list
+function collectDisks(vdev, disks) {
+    if (vdev.vdev_type === "disk") {
+        disks.push(vdev);
+        return;
+    }
+    for (const child of Object.values(vdev.vdevs || {})) {
+        collectDisks(child, disks);
+    }
+}
+
+// Builds one card: name, donut, health, usage, scrub, disks
+function makePoolCard(name, percent, health, size, alloc, disks, scan) {
     const card = document.createElement("div");
     card.className = "pool-card";
 
@@ -44,9 +69,59 @@ function makePoolCard(name, percent, health, size, alloc) {
     usage.textContent = formatBytes(alloc) + " used of " + formatBytes(size);
     card.appendChild(usage);
 
+    const scrub = document.createElement("p");
+    scrub.className = "scrub";
+    scrub.textContent = scrubText(scan);
+    card.appendChild(scrub);
+
+    card.appendChild(makeDiskTable(disks));
+
     return card;
 }
 
+// One row per disk: name, state, read/write/checksum errors
+function makeDiskTable(disks) {
+    const table = document.createElement("table");
+    table.className = "disks";
+
+    const head = table.createTHead().insertRow();
+    for (const label of ["Disk", "State", "Read", "Write", "Cksum"]) {
+        const th = document.createElement("th");
+        th.textContent = label;
+        head.appendChild(th);
+    }
+
+    const body = table.createTBody();
+    for (const disk of disks) {
+        const row = body.insertRow();
+
+        row.insertCell().textContent = disk.name;
+
+        const stateCell = row.insertCell();
+        stateCell.textContent = disk.state;
+        stateCell.className = "health " + healthClass(disk.state);
+
+        for (const key of ["read_errors", "write_errors", "checksum_errors"]) {
+            const cell = row.insertCell();
+            const count = Number(disk[key]);
+            cell.textContent = count;
+            cell.className = "num" + (count > 0 ? " bad-count" : "");
+        }
+    }
+
+    return table;
+}
+
+// "Last scrub: Sat Oct 24 ..., 0 errors"
+function scrubText(scan) {
+    if (!scan || scan.function !== "SCRUB") {
+        return "No scrub has run yet";
+    }
+    if (scan.state !== "FINISHED") {
+        return "Scrub " + scan.state.toLowerCase() + "...";
+    }
+    return "Last scrub: " + scan.end_time + ", " + scan.errors + " errors";
+}
 // Draws the donut chart with SVG
 function makeDonut(percent) {
     const radius = 40;
@@ -57,7 +132,6 @@ function makeDonut(percent) {
     svg.setAttribute("viewBox", "0 0 100 100");
     svg.setAttribute("class", "donut");
 
-    // grey background ring = whole pool
     const track = document.createElementNS(SVG_NS, "circle");
     track.setAttribute("cx", "50");
     track.setAttribute("cy", "50");
@@ -65,17 +139,15 @@ function makeDonut(percent) {
     track.setAttribute("class", "donut-track");
     svg.appendChild(track);
 
-    // colored ring = used space
     const fill = document.createElementNS(SVG_NS, "circle");
     fill.setAttribute("cx", "50");
     fill.setAttribute("cy", "50");
     fill.setAttribute("r", radius);
     fill.setAttribute("class", "donut-fill");
     fill.setAttribute("stroke-dasharray", used + " " + circumference);
-    fill.setAttribute("transform", "rotate(-90 50 50)");  // start at the top
+    fill.setAttribute("transform", "rotate(-90 50 50)");
     svg.appendChild(fill);
 
-    // percentage in the middle
     const label = document.createElementNS(SVG_NS, "text");
     label.setAttribute("x", "50");
     label.setAttribute("y", "50");
