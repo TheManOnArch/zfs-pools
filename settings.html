@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>NAS Settings</title>
+  <link rel="stylesheet" href="zfs-pools.css">
+  <script src="../base1/cockpit.js"></script>
+  <script src="shared.js"></script>
+  <script src="settings.js"></script>
+</head>
+<body>
+  <h1>NAS Settings</h1>
+  <p id="message" class="message"></p>
+
+  <div class="card">
+    <h2>Phone notifications (ntfy)</h2>
+    <p>Alerts about failing disks and pool problems are sent to this ntfy topic.
+       Anyone who knows the topic can read your alerts, so use a long random one.</p>
+    <label class="field">Topic
+      <input id="topic" placeholder="not set: notifications are off" maxlength="64">
+    </label>
+    <button id="generate" class="secondary">Generate random topic</button>
+    <button id="save">Save</button>
+    <button id="test" class="secondary">Send test notification</button>
+  </div>
+</body>
+</html>

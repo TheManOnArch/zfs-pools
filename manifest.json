@@ -9,6 +9,9 @@
         },
         "shares": {
             "label": "Shares"
+        },
+        "settings": {
+            "label": "NAS Settings"
         }
     }
 }
