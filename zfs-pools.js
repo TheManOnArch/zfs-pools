@@ -90,6 +90,10 @@ function makePoolCard(name, percent, health, size, alloc, disks, scan) {
             });
     });
     card.appendChild(scrubBtn);
+    const datasetBtn = document.createElement("button");
+    datasetBtn.textContent = "New dataset";
+    datasetBtn.addEventListener("click", () => openNewDatasetDialog(name));
+    card.appendChild(datasetBtn);
     card.appendChild(makeDiskTable(disks));
 
     return card;
@@ -180,4 +184,108 @@ function healthClass(health) {
     if (health === "ONLINE") return "ok";
     if (health === "DEGRADED") return "warn";
     return "bad";
+}
+// ---------- New dataset ----------
+
+// Normal login users (UID 1000 and up), read from the system's user list
+async function listUsers() {
+    const text = await cockpit.spawn(["getent", "passwd"]);
+    return text.trim().split("\n")
+        .map((line) => line.split(":"))
+        .filter((f) => Number(f[2]) >= 1000 && Number(f[2]) < 65534)
+        .map((f) => ({ name: f[0], gid: f[3] }));
+}
+
+async function openNewDatasetDialog(pool) {
+    let users;
+    try {
+        users = await listUsers();
+    } catch (error) {
+        showMessage("Could not list users: " + error.message, true);
+        return;
+    }
+
+    const dialog = document.createElement("dialog");
+    dialog.className = "confirm";
+    // Fixed markup only; real data is added below with textContent
+    dialog.innerHTML = `
+        <h2></h2>
+        <label class="field">Name
+            <input name="name" placeholder="e.g. photos" maxlength="64">
+        </label>
+        <label class="field">Owner
+            <select name="owner"></select>
+        </label>
+        <label class="field">Size limit (optional, e.g. 500G or 2T)
+            <input name="quota" placeholder="no limit">
+        </label>
+        <p class="message"></p>
+        <div class="confirm-buttons">
+            <button class="secondary" data-action="cancel">Cancel</button>
+            <button data-action="create">Create dataset</button>
+        </div>`;
+    dialog.querySelector("h2").textContent = "New dataset in " + pool;
+
+    const select = dialog.querySelector("select[name=owner]");
+    for (const user of users) {
+        const option = document.createElement("option");
+        option.value = user.name + ":" + user.gid;
+        option.textContent = user.name;
+        select.appendChild(option);
+    }
+
+    dialog.querySelector("[data-action=cancel]").addEventListener("click", () => dialog.close());
+    dialog.querySelector("[data-action=create]").addEventListener("click", () => createDataset(pool, dialog));
+    dialog.addEventListener("close", () => dialog.remove());
+
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    dialog.querySelector("input[name=name]").focus();
+}
+
+async function createDataset(pool, dialog) {
+    const name = dialog.querySelector("[name=name]").value.trim();
+    const owner = dialog.querySelector("[name=owner]").value;
+    const quota = dialog.querySelector("[name=quota]").value.trim().toUpperCase();
+    const button = dialog.querySelector("[data-action=create]");
+
+    // --- Validate before touching the system ---
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) {
+        showMessage("Name: letters, numbers, - or _, starting with a letter or number.", true);
+        return;
+    }
+    if (!owner) {
+        showMessage("Choose an owner. Create a user in Accounts first if the list is empty.", true);
+        return;
+    }
+    if (quota !== "" && !/^[1-9][0-9]*[KMGT]$/.test(quota)) {
+        showMessage("Size limit: a number followed by K, M, G or T (e.g. 500G), or leave it empty.", true);
+        return;
+    }
+
+    const dataset = pool + "/" + name;
+    const command = ["zfs", "create"];
+    if (quota !== "") {
+        command.push("-o", "quota=" + quota);
+    }
+    command.push(dataset);
+
+    button.disabled = true;
+    try {
+        await runAdmin(command);
+
+        // Find where it was mounted, then give it to the chosen owner
+        const mountpoint = (await runAdmin(["zfs", "get", "-H", "-o", "value", "mountpoint", dataset])).trim();
+        if (!mountpoint.startsWith("/")) {
+            throw new Error("Created " + dataset + ", but it has no mountpoint (" + mountpoint + ").");
+        }
+        await runAdmin(["chown", owner, mountpoint]);
+
+        dialog.close();
+        showMessage("Created " + dataset + " at " + mountpoint + ".");
+        loadPools();
+    } catch (error) {
+        showMessage("Could not create dataset: " + error.message, true);
+        button.disabled = false;
+    }
 }
