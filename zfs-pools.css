@@ -68,13 +68,13 @@ body {
 .disks th { opacity: 0.7; font-weight: normal; }
 .disks .num { text-align: right; font-variant-numeric: tabular-nums; }
 .disks .bad-count { color: var(--bad); font-weight: bold; }
-.snap-section {
+.card {
     background: var(--card);
     border-radius: 8px;
     padding: 1rem 1.5rem;
     margin-bottom: 1rem;
 }
-.snap-section h2 { margin-top: 0; font-size: 1.1rem; }
+.card h2 { margin-top: 0; font-size: 1.1rem; }
 
 .data-table {
     width: 100%;
@@ -130,8 +130,8 @@ button.link {
 button.link:hover { text-decoration: underline; }
 
 .data-table td button { margin-right: 0.4rem; }
-.snap-section h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; opacity: 0.8; }
-.data-table th[scope], .snap-section table:first-of-type th { width: 10rem; }
+.card h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; opacity: 0.8; }
+.data-table th[scope], .card table:first-of-type th { width: 10rem; }
 /* Fading messages */
 .message { transition: opacity 0.6s; white-space: pre-line; }
 .message.fade { opacity: 0; }

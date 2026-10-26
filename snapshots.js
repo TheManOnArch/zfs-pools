@@ -62,7 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // A heading plus a table of that dataset's snapshots
 function makeDatasetSection(dataset, snaps) {
     const section = document.createElement("div");
-    section.className = "snap-section";
+    section.className = "card";
 
     const title = document.createElement("h2");
     title.textContent = dataset + " (" + snaps.length + ")";
